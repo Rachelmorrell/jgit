@@ -486,6 +486,8 @@
     <module>org.eclipse.jgit.http.test</module>
     <module>org.eclipse.jgit.storage.dht.test</module>
     <module>org.eclipse.jgit.pgm.test</module>
+
+    <module>org.eclipse.jgit.filewrapper</module>
   </modules>
 
 </project>
