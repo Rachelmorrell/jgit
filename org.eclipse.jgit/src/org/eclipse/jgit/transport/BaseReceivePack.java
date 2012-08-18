@@ -154,6 +154,9 @@ public abstract class BaseReceivePack {
 	 */
 	protected boolean biDirectionalPipe = true;
 
+	/** Expecting data after the pack footer */
+	protected boolean expectDataAfterPackFooter;
+
 	/** Should an incoming transfer validate objects? */
 	protected boolean checkReceivedObjects;
 
@@ -452,6 +455,19 @@ public abstract class BaseReceivePack {
 	 */
 	public void setBiDirectionalPipe(final boolean twoWay) {
 		biDirectionalPipe = twoWay;
+	}
+
+	/** @return true if there is data expected after the pack footer. */
+	public boolean isExpectDataAfterPackFooter() {
+		return expectDataAfterPackFooter;
+	}
+
+	/**
+	 * @param e
+	 *            true if there is additional data in InputStream after pack.
+	 */
+	public void setExpectDataAfterPackFooter(boolean e) {
+		expectDataAfterPackFooter = e;
 	}
 
 	/**
@@ -908,7 +924,9 @@ public abstract class BaseReceivePack {
 			parser.setAllowThin(true);
 			parser.setNeedNewObjectIds(checkReferencedIsReachable);
 			parser.setNeedBaseObjectIds(checkReferencedIsReachable);
-			parser.setCheckEofAfterPackFooter(!biDirectionalPipe);
+			parser.setCheckEofAfterPackFooter(!biDirectionalPipe
+					&& !isExpectDataAfterPackFooter());
+			parser.setExpectDataAfterPackFooter(isExpectDataAfterPackFooter());
 			parser.setObjectChecking(isCheckReceivedObjects());
 			parser.setLockMessage(lockMsg);
 			parser.setMaxObjectSizeLimit(maxObjectSizeLimit);
@@ -939,7 +957,7 @@ public abstract class BaseReceivePack {
 
 		final ObjectWalk ow = new ObjectWalk(db);
 		ow.setRetainBody(false);
-		if (checkReferencedIsReachable) {
+		if (baseObjects != null) {
 			ow.sort(RevSort.TOPO);
 			if (!baseObjects.isEmpty())
 				ow.sort(RevSort.BOUNDARY, true);
@@ -956,7 +974,7 @@ public abstract class BaseReceivePack {
 			RevObject o = ow.parseAny(have);
 			ow.markUninteresting(o);
 
-			if (checkReferencedIsReachable && !baseObjects.isEmpty()) {
+			if (baseObjects != null && !baseObjects.isEmpty()) {
 				o = ow.peel(o);
 				if (o instanceof RevCommit)
 					o = ((RevCommit) o).getTree();
@@ -967,7 +985,7 @@ public abstract class BaseReceivePack {
 
 		RevCommit c;
 		while ((c = ow.next()) != null) {
-			if (checkReferencedIsReachable //
+			if (providedObjects != null //
 					&& !c.has(RevFlag.UNINTERESTING) //
 					&& !providedObjects.contains(c))
 				throw new MissingObjectException(c, Constants.TYPE_COMMIT);
@@ -978,7 +996,7 @@ public abstract class BaseReceivePack {
 			if (o.has(RevFlag.UNINTERESTING))
 				continue;
 
-			if (checkReferencedIsReachable) {
+			if (providedObjects != null) {
 				if (providedObjects.contains(o))
 					continue;
 				else
@@ -989,7 +1007,7 @@ public abstract class BaseReceivePack {
 				throw new MissingObjectException(o, Constants.TYPE_BLOB);
 		}
 
-		if (checkReferencedIsReachable) {
+		if (baseObjects != null) {
 			for (ObjectId id : baseObjects) {
 				o = ow.parseAny(id);
 				if (!o.has(RevFlag.UNINTERESTING))
@@ -1192,9 +1210,10 @@ public abstract class BaseReceivePack {
 			}
 
 			final StringBuilder r = new StringBuilder();
-			r.append("ng ");
-			r.append(cmd.getRefName());
-			r.append(" ");
+			if (forClient)
+				r.append("ng ").append(cmd.getRefName()).append(" ");
+			else
+				r.append(" ! [rejected] ").append(cmd.getRefName()).append(" (");
 
 			switch (cmd.getResult()) {
 			case NOT_ATTEMPTED:
@@ -1241,6 +1260,8 @@ public abstract class BaseReceivePack {
 				// We shouldn't have reached this case (see 'ok' case above).
 				continue;
 			}
+			if (!forClient)
+				r.append(")");
 			out.sendString(r.toString());
 		}
 	}
